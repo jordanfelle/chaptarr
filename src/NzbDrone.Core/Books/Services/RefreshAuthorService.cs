@@ -2069,7 +2069,34 @@ namespace NzbDrone.Core.Books
                     .Select(g => g.First())
                     .ToList();
 
-                return _refreshBookService.RefreshBookInfo(booksToRefresh, remoteChildren, remoteData, forceChildRefresh, forceUpdateFileTags, lastUpdate);
+                // PERF/correctness (chaptarr #181): AreChildrenUpToDate (above, in SortChildren) already did
+                // a full content comparison and put these specific books in the Updated bucket because their
+                // stored fields provably differ from what the metadata source just returned. But
+                // ShouldRefreshBook.ShouldRefresh - the per-book-group gate inside RefreshBookInfo - applies
+                // an unrelated cooldown (skip books whose LastInfoSync is under 12h old) that has no idea a
+                // real diff was just detected. Once any refresh in that window actually applies the change
+                // (setting LastInfoSync to "now"), every refresh for the rest of the 12h silently re-detects
+                // the same diff and just as silently declines to write it - "N books updated" forever,
+                // nothing ever actually updates. A book we've already confirmed differs must not be subject
+                // to that "maybe it hasn't changed, don't bother" heuristic, so it gets its own forced pass.
+                var updatedIds = new HashSet<int>(localChildren.Updated
+                    .Where(b => b?.Id > 0)
+                    .Select(b => b.Id));
+                var knownChangedBooks = booksToRefresh.Where(b => updatedIds.Contains(b.Id)).ToList();
+                var remainingBooks = booksToRefresh.Where(b => !updatedIds.Contains(b.Id)).ToList();
+
+                var refreshed = false;
+                if (knownChangedBooks.Count > 0)
+                {
+                    refreshed |= _refreshBookService.RefreshBookInfo(knownChangedBooks, remoteChildren, remoteData, forceBookRefresh: true, forceUpdateFileTags, lastUpdate);
+                }
+
+                if (remainingBooks.Count > 0)
+                {
+                    refreshed |= _refreshBookService.RefreshBookInfo(remainingBooks, remoteChildren, remoteData, forceChildRefresh, forceUpdateFileTags, lastUpdate);
+                }
+
+                return refreshed;
             }
 
         protected override void PublishEntityUpdatedEvent(Author entity, Author remoteData)
