@@ -467,6 +467,55 @@ namespace NzbDrone.Core.MediaFiles.BookImport.Manual
             return result;
         }
 
+        // Executing a metadata suggestion can add a missing work only when the request carries an edition id
+        // (MaterializeUserSelectedEditionAsync). Without one, execution falls back to AddAuthorAsync, which returns an
+        // author that already exists unchanged, so the work is never added and the import is rejected with "The
+        // authoritative author catalog does not currently contain suggested work". The preview used to show no
+        // warning at all for this case. Say so up front instead.
+        private string GetUnresolvableSuggestionReason(ManualImportItem item, string actualPath)
+        {
+            if (item.Book != null ||
+                string.IsNullOrWhiteSpace(item.SuggestedForeignAuthorId) ||
+                string.IsNullOrWhiteSpace(item.SuggestedForeignBookId) ||
+                !string.IsNullOrWhiteSpace(item.SuggestedForeignEditionId))
+            {
+                return null;
+            }
+
+            try
+            {
+                if (!ProviderIdHelper.TryNormalize(item.SuggestedForeignAuthorId, defaultPrefix: null, out var authorId) ||
+                    !ProviderIdHelper.TryNormalize(item.SuggestedForeignBookId, defaultPrefix: null, out var workId))
+                {
+                    return null;
+                }
+
+                var author = _authorService.FindByProviderId(authorId.Substring(0, authorId.IndexOf(':')), ProviderIdHelper.StripPrefix(authorId));
+                if (author == null || author.Id <= 0)
+                {
+                    // Not a local author yet: execution adds the whole author, which brings the work with it.
+                    return null;
+                }
+
+                var mediaType = MediaFileExtensions.TextExtensions.Contains(Path.GetExtension(actualPath ?? string.Empty))
+                    ? BookMediaType.Ebook
+                    : BookMediaType.Audiobook;
+
+                var inCatalog = _bookService
+                    .FindAllByWorkProviderId(workId.Substring(0, workId.IndexOf(':')), ProviderIdHelper.StripPrefix(workId), mediaType)
+                    .Any(book => book != null && book.AuthorId == author.Id && book.MediaType == mediaType);
+
+                return inCatalog
+                    ? null
+                    : $"The suggested work '{workId}' is not in {author.Name}'s local catalog and the suggestion has no edition id, so it cannot be added from metadata. Select a local book manually.";
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "Could not check whether suggested work '{0}' can be added", item.SuggestedForeignBookId);
+                return null;
+            }
+        }
+
         private ManualImportItem MapItem(ImportDecision<LocalBook> decision, string downloadId, bool replaceExistingFiles, bool disableReleaseSwitching)
         {
             var item = new ManualImportItem();
@@ -510,7 +559,15 @@ namespace NzbDrone.Core.MediaFiles.BookImport.Manual
             item.Quality = decision.Item.Quality;
             item.IndexerFlags = (int)decision.Item.IndexerFlags;
             item.Size = fileInfo.Length;
-            item.Rejections = decision.Rejections;
+
+            var rejections = decision.Rejections?.ToList() ?? new List<Rejection>();
+            var unresolvableSuggestion = GetUnresolvableSuggestionReason(item, actualPath);
+            if (unresolvableSuggestion.IsNotNullOrWhiteSpace())
+            {
+                rejections.Add(new Rejection(unresolvableSuggestion, RejectionType.Temporary));
+            }
+
+            item.Rejections = rejections;
             item.Tags = decision.Item.RawTags?.AllTags ?? new Dictionary<string, List<string>>();
             item.AdditionalFile = decision.Item.AdditionalFile;
             item.ReplaceExistingFiles = replaceExistingFiles;
