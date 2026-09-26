@@ -1686,6 +1686,73 @@ namespace Chaptarr.Core.Test.MediaFiles
             Assert.That(outcome.SourceFilesOnDisk, Is.True);
         }
 
+        [Test]
+        public void automatic_import_onto_an_occupied_tracked_destination_should_be_a_duplicate()
+        {
+            var outcome = RunDuplicateImportScenario(Quality.EPUB, Quality.EPUB, existingAtDestination: true);
+
+            Assert.That(outcome.Results, Has.Count.EqualTo(1));
+            Assert.That(outcome.Results[0].Result, Is.EqualTo(ImportResultType.Skipped));
+            Assert.That(outcome.Results[0].Errors, Does.Contain(ImportApprovedBooks.AlreadyImportedRejectionReason));
+            Assert.That(outcome.TransferCalls, Is.EqualTo(0));
+            Assert.That(outcome.MediaFileService.ReplaceCalls, Is.EqualTo(0));
+            Assert.That(outcome.MediaFileService.DeletedFiles, Is.Empty);
+            Assert.That(outcome.RecycleBin.DeletedFiles, Is.Empty);
+            Assert.That(outcome.MediaFileService.FilesByBook.Select(f => f.Id), Is.EquivalentTo(new[] { 9001 }));
+            Assert.That(outcome.DestinationContent, Is.EqualTo("existing"));
+            Assert.That(outcome.SourceFilesOnDisk, Is.True);
+        }
+
+        [Test]
+        public void automatic_import_onto_a_destination_tracked_for_another_edition_should_be_rejected_without_an_exception()
+        {
+            var outcome = RunDuplicateImportScenario(Quality.EPUB, Quality.EPUB, existingAtDestination: true, existingEditionIdOverride: 931);
+
+            Assert.That(outcome.Results[0].Result, Is.EqualTo(ImportResultType.Skipped));
+            Assert.That(outcome.Results[0].Errors.Single(), Does.Contain("tracked for another edition already occupies the managed destination"));
+            Assert.That(outcome.TransferCalls, Is.EqualTo(0));
+            Assert.That(outcome.MediaFileService.DeletedFiles, Is.Empty);
+            Assert.That(outcome.DestinationContent, Is.EqualTo("existing"));
+            Assert.That(outcome.SourceFilesOnDisk, Is.True);
+        }
+
+        [Test]
+        public void automatic_import_onto_an_untracked_occupied_destination_should_be_rejected_without_an_exception()
+        {
+            var outcome = RunDuplicateImportScenario(Quality.EPUB, Quality.EPUB, existingAtDestination: true, existingUntracked: true);
+
+            Assert.That(outcome.Results[0].Result, Is.EqualTo(ImportResultType.Skipped));
+            Assert.That(outcome.Results[0].Errors.Single(), Does.Contain("untracked file already occupies the managed destination"));
+            Assert.That(outcome.TransferCalls, Is.EqualTo(0));
+            Assert.That(outcome.MediaFileService.FilesByBook, Is.Empty);
+            Assert.That(outcome.DestinationContent, Is.EqualTo("existing"));
+            Assert.That(outcome.SourceFilesOnDisk, Is.True);
+        }
+
+        [Test]
+        public void manual_import_onto_an_occupied_tracked_destination_should_still_replace()
+        {
+            var outcome = RunDuplicateImportScenario(Quality.EPUB, Quality.EPUB, isManualImport: true, existingAtDestination: true);
+
+            Assert.That(outcome.Results[0].Result, Is.EqualTo(ImportResultType.Imported));
+            Assert.That(outcome.TransferCalls, Is.EqualTo(1));
+            Assert.That(outcome.DestinationContent, Is.EqualTo("incoming"));
+            Assert.That(outcome.MediaFileService.FilesByBook.Select(f => f.Id), Is.EquivalentTo(new[] { 9001 }));
+            Assert.That(outcome.MediaFileService.FilesByBook.Single().Quality.Quality, Is.EqualTo(Quality.EPUB));
+        }
+
+        [Test]
+        public void genuine_upgrade_onto_an_occupied_tracked_destination_should_still_replace()
+        {
+            var outcome = RunDuplicateImportScenario(Quality.M4B, Quality.M4B, incomingRevision: new Revision(2), existingAtDestination: true);
+
+            Assert.That(outcome.Results[0].Result, Is.EqualTo(ImportResultType.Imported));
+            Assert.That(outcome.TransferCalls, Is.EqualTo(1));
+            Assert.That(outcome.DestinationContent, Is.EqualTo("incoming"));
+            Assert.That(outcome.MediaFileService.FilesByBook.Select(f => f.Id), Is.EquivalentTo(new[] { 9001 }));
+            Assert.That(outcome.MediaFileService.FilesByBook.Single().Quality.Revision.Version, Is.EqualTo(2));
+        }
+
         private sealed class DuplicateImportOutcome
         {
             public List<ImportResult> Results { get; init; }
@@ -1693,6 +1760,8 @@ namespace Chaptarr.Core.Test.MediaFiles
             public StubRecycleBinProvider RecycleBin { get; init; }
             public bool ExistingFilesOnDisk { get; init; }
             public bool SourceFilesOnDisk { get; init; }
+            public int TransferCalls { get; init; }
+            public string DestinationContent { get; init; }
         }
 
         private static string ExtensionForQuality(Quality quality)
@@ -1715,7 +1784,10 @@ namespace Chaptarr.Core.Test.MediaFiles
             Quality incomingQuality,
             int fileCount = 1,
             bool isManualImport = false,
-            Revision incomingRevision = null)
+            Revision incomingRevision = null,
+            bool existingAtDestination = false,
+            int? existingEditionIdOverride = null,
+            bool existingUntracked = false)
         {
             var tempDir = Path.Combine(TestContext.CurrentContext.WorkDirectory, $"duplicate-import-{Guid.NewGuid():N}");
             var libraryDir = Path.Combine(tempDir, "library");
@@ -1793,23 +1865,50 @@ namespace Chaptarr.Core.Test.MediaFiles
 
                 book.Editions = new List<Edition> { edition };
 
-                var mediaFileService = new StubMediaFileService();
+                var destinationPath = Path.Combine(libraryDir, $"imported{ExtensionForQuality(incomingQuality)}");
+
+                var otherEdition = existingEditionIdOverride.HasValue
+                    ? new Edition
+                    {
+                        Id = existingEditionIdOverride.Value,
+                        BookId = book.Id,
+                        Book = book,
+                        Title = "The Vines (other edition)",
+                        Format = isEbook ? "ebook" : "audiobook",
+                        IsEbook = isEbook,
+                        ReadingFormatId = isEbook ? 3 : 2,
+                        Monitored = true
+                    }
+                    : null;
+
+                var mediaFileService = new StubMediaFileService { AllowUpdates = existingAtDestination };
                 var existingPaths = new List<string>();
                 for (var i = 0; i < fileCount; i++)
                 {
-                    var existingPath = Path.Combine(libraryDir, $"The Vines - Part {i + 1}{ExtensionForQuality(existingQuality)}");
+                    var existingPath = existingAtDestination && i == 0
+                        ? destinationPath
+                        : Path.Combine(libraryDir, $"The Vines - Part {i + 1}{ExtensionForQuality(existingQuality)}");
                     File.WriteAllText(existingPath, "existing");
                     existingPaths.Add(existingPath);
-                    mediaFileService.FilesByBook.Add(new BookFile
+
+                    if (existingUntracked)
+                    {
+                        continue;
+                    }
+
+                    var existingFile = new BookFile
                     {
                         Id = 9001 + i,
                         Path = existingPath,
-                        EditionId = edition.Id,
-                        Edition = edition,
+                        EditionId = otherEdition?.Id ?? edition.Id,
+                        Edition = otherEdition ?? edition,
                         Part = i + 1,
                         PartCount = fileCount,
                         Quality = new QualityModel { Quality = existingQuality, Revision = new Revision() }
-                    });
+                    };
+
+                    mediaFileService.FilesByBook.Add(existingFile);
+                    mediaFileService.FilesByPath[existingPath] = existingFile;
                 }
 
                 var sourcePaths = new List<string>();
@@ -1836,6 +1935,11 @@ namespace Chaptarr.Core.Test.MediaFiles
 
                 var recycleBin = new StubRecycleBinProvider();
                 var (bookService, _) = CreateBookService(new List<Book> { book });
+                var mover = new StubMoveBookFiles
+                {
+                    DestinationPath = destinationPath,
+                    TransferFilesOnDisk = true
+                };
                 var service = new ImportApprovedBooks(
                     mediaFileService,
                     new StubMetadataTagService(),
@@ -1845,11 +1949,7 @@ namespace Chaptarr.Core.Test.MediaFiles
                     CreateEditionService(new List<Edition> { edition }),
                     recycleBin,
                     Proxy<IExtraService>(),
-                    new StubMoveBookFiles
-                    {
-                        DestinationPath = Path.Combine(libraryDir, $"imported{ExtensionForQuality(incomingQuality)}"),
-                        TransferFilesOnDisk = true
-                    },
+                    mover,
                     Proxy<IHistoryService>(),
                     Proxy<NzbDrone.Core.Download.History.IDownloadHistoryService>(),
                     new NoOpEventAggregator(),
@@ -1873,7 +1973,9 @@ namespace Chaptarr.Core.Test.MediaFiles
                     MediaFileService = mediaFileService,
                     RecycleBin = recycleBin,
                     ExistingFilesOnDisk = existingPaths.All(File.Exists),
-                    SourceFilesOnDisk = sourcePaths.All(File.Exists)
+                    SourceFilesOnDisk = sourcePaths.All(File.Exists),
+                    TransferCalls = mover.CopyCalls + mover.MoveCalls,
+                    DestinationContent = File.Exists(destinationPath) ? File.ReadAllText(destinationPath) : null
                 };
             }
             finally
