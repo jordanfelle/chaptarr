@@ -1330,7 +1330,7 @@ namespace NzbDrone.Core.Books
             return groups;
         }
 
-        private bool HasCompatibleRootFolderForMediaType(Author author, BookMediaType mediaType)
+        private bool HasCompatibleRootFolderForMediaType(Author author, BookMediaType mediaType, List<RootFolder> rootFolders = null)
         {
             if (author == null)
             {
@@ -1351,7 +1351,9 @@ namespace NzbDrone.Core.Books
                 return true;
             }
 
-            var rootFolder = _rootFolderService.All()?.FirstOrDefault(r => r.Path.PathEquals(rootFolderPath));
+            // PERF (chaptarr #163): callers that already fetched RootFolders once for a whole batch
+            // (see GetSyncUpdatesForMutations) pass it through here instead of this re-querying per book.
+            var rootFolder = (rootFolders ?? _rootFolderService.All())?.FirstOrDefault(r => r.Path.PathEquals(rootFolderPath));
             if (rootFolder == null)
             {
                 return false;
@@ -1362,7 +1364,7 @@ namespace NzbDrone.Core.Books
                    (mediaType == BookMediaType.Ebook && rootFolder.FolderType == FolderType.Ebook);
         }
 
-        private bool CanEnableMonitoringForMediaType(Author author, BookMediaType mediaType)
+        private bool CanEnableMonitoringForMediaType(Author author, BookMediaType mediaType, List<RootFolder> rootFolders = null)
         {
             if (author == null)
             {
@@ -1372,14 +1374,14 @@ namespace NzbDrone.Core.Books
             // Book-row state is independent from the author-side gate. The gate is
             // evaluated by eligibility queries, so an explicit row selection remains
             // valid while its author side is paused.
-            return HasCompatibleRootFolderForMediaType(author, mediaType);
+            return HasCompatibleRootFolderForMediaType(author, mediaType, rootFolders);
         }
 
-        private void EnsureOneMonitoredOnFormat(List<Book> workGroup, BookMediaType mediaType, Author author)
+        private void EnsureOneMonitoredOnFormat(List<Book> workGroup, BookMediaType mediaType, Author author, List<RootFolder> rootFolders = null)
         {
             var formatBooks = GetSyncParticipants(workGroup, mediaType);
 
-            if (!formatBooks.Any() || formatBooks.Any(IsRowMonitored) || !CanEnableMonitoringForMediaType(author, mediaType))
+            if (!formatBooks.Any() || formatBooks.Any(IsRowMonitored) || !CanEnableMonitoringForMediaType(author, mediaType, rootFolders))
             {
                 return;
             }
@@ -1401,7 +1403,7 @@ namespace NzbDrone.Core.Books
             }
         }
 
-        private void ApplyMutationSyncForWorkGroup(Author author, List<Book> workGroup, HashSet<int> changedBookIds, Dictionary<int, Book> storedById)
+        private void ApplyMutationSyncForWorkGroup(Author author, List<Book> workGroup, HashSet<int> changedBookIds, Dictionary<int, Book> storedById, List<RootFolder> rootFolders = null)
         {
             if (author?.SyncMonitoredAcrossFormats != true ||
                 workGroup == null ||
@@ -1459,8 +1461,8 @@ namespace NzbDrone.Core.Books
 
             if (anyEnabled)
             {
-                EnsureOneMonitoredOnFormat(workGroup, BookMediaType.Audiobook, author);
-                EnsureOneMonitoredOnFormat(workGroup, BookMediaType.Ebook, author);
+                EnsureOneMonitoredOnFormat(workGroup, BookMediaType.Audiobook, author, rootFolders);
+                EnsureOneMonitoredOnFormat(workGroup, BookMediaType.Ebook, author, rootFolders);
                 return;
             }
 
@@ -1491,6 +1493,11 @@ namespace NzbDrone.Core.Books
                     continue;
                 }
 
+                // PERF (chaptarr #163): fetch once per author (a handful of rows, rarely changes)
+                // instead of once per work group inside ApplyMutationSyncForWorkGroup below - this whole
+                // GetSyncUpdatesForMutations pass already runs once per book save.
+                var rootFolders = _rootFolderService?.All();
+
                 var repositoryBooks = _bookRepository.GetBooksByAuthorId(authorBooks.Key) ?? new List<Book>();
                 var authorStoredById = repositoryBooks.ToDictionary(book => book.Id, CloneStoredBook);
                 var authorBooksById = repositoryBooks.ToDictionary(book => book.Id);
@@ -1510,7 +1517,7 @@ namespace NzbDrone.Core.Books
 
                 foreach (var workGroup in BuildWorkGroups(authorBooksById.Values.ToList()))
                 {
-                    ApplyMutationSyncForWorkGroup(author, workGroup, changedBookIds, authorStoredById);
+                    ApplyMutationSyncForWorkGroup(author, workGroup, changedBookIds, authorStoredById, rootFolders);
                 }
 
                 foreach (var pair in authorBooksById)
