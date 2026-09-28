@@ -54,7 +54,7 @@ namespace Chaptarr.Core.Test.Notifications
             var book = new Book { Id = 1, Author = new Author { Id = 1, Name = "Jim Butcher" } };
 
             Assert.DoesNotThrow(() =>
-                service.Handle(new BookDeletedEvent(book, deleteFiles: true, addImportListExclusion: false, partOfAuthorDelete: true)));
+                service.HandleAsync(new BookDeletedEvent(book, deleteFiles: true, addImportListExclusion: false, partOfAuthorDelete: true)));
         }
 
         [Test]
@@ -71,7 +71,15 @@ namespace Chaptarr.Core.Test.Notifications
 
             var book = new Book { Id = 1, Author = new Author { Id = 1, Name = "Jim Butcher" } };
 
-            service.Handle(new BookDeletedEvent(book, deleteFiles: true, addImportListExclusion: false, partOfAuthorDelete: false));
+            service.HandleAsync(new BookDeletedEvent(book, deleteFiles: true, addImportListExclusion: false, partOfAuthorDelete: false));
+
+            // The standalone (not-part-of-an-author-delete) path drains its notification queue on a
+            // background task rather than inline, so give it a moment rather than asserting instantly.
+            var deadline = DateTime.UtcNow.AddSeconds(2);
+            while (factoryRecorder.OnBookDeleteEnabledCalls == 0 && DateTime.UtcNow < deadline)
+            {
+                System.Threading.Thread.Sleep(10);
+            }
 
             Assert.That(factoryRecorder.OnBookDeleteEnabledCalls, Is.EqualTo(1));
         }
