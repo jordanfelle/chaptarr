@@ -29,6 +29,7 @@ namespace NzbDrone.Core.Books
 		        List<Book> GetNextBooks(IEnumerable<int> authorIds);
 		        List<Book> GetBooksByAuthorId(int authorId);
         IReadOnlySet<BookMediaType> GetMediaTypesByAuthor(int authorId) => throw new NotImplementedException();
+		        List<Book> GetBooksByMediaType(BookMediaType mediaType) => throw new NotImplementedException();
 		        List<Book> GetBooksForRefresh(int authorId, IEnumerable<string> providerIds);
 		        List<Book> GetBooksByFileIds(IEnumerable<int> fileIds);
 
@@ -329,6 +330,11 @@ namespace NzbDrone.Core.Books
         public List<Book> GetBooksByAuthorId(int authorId)
         {
             return Query(s => s.AuthorId == authorId);
+        }
+
+        public List<Book> GetBooksByMediaType(BookMediaType mediaType)
+        {
+            return Query(s => s.MediaType == mediaType);
         }
 
 			        public List<Book> GetBooksForRefresh(int authorId, IEnumerable<string> providerIds)

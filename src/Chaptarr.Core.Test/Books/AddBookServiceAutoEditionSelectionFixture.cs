@@ -326,7 +326,7 @@ namespace Chaptarr.Core.Test.Books
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToDictionary(id => id,
                     id => _editions.Where(edition => BookEditionIdentity.EditionMatchesProviderId(edition, provider + ":" + id)).ToList(),
                     StringComparer.OrdinalIgnoreCase);
-            public List<Edition> GetAllMonitoredEditions() => throw new NotImplementedException();
+            public List<Edition> GetMonitoredEditionsForBookList(BookMediaType? mediaType) => throw new NotImplementedException();
             public void InsertMany(List<Edition> editions) => throw new NotImplementedException();
             public void InsertMany(List<Edition> editions, System.Data.IDbConnection connection, System.Data.IDbTransaction transaction) => throw new NotImplementedException();
             public void UpdateMany(List<Edition> editions, System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Edition selectedEdition = null) => throw new System.NotSupportedException();
