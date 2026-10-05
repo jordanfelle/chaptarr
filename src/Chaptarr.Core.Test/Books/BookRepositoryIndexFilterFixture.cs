@@ -411,6 +411,51 @@ namespace Chaptarr.Core.Test.Books
             }, seed: connection => connection.Execute("UPDATE \"Editions\" SET \"Title\" = CASE WHEN \"BookId\" = 3 THEN 'Zulu' ELSE 'Alpha' END"));
         }
 
+        [TestCase("authorName", "ASC", "ebook", new[] { 8, 1, 2, 3, 4, 5 })]
+        [TestCase("qualityProfileId", "DESC", "ebook", new[] { 8, 5, 4, 3, 2, 1 })]
+        [TestCase("path", "ASC", "ebook", new[] { 1, 2, 3, 4, 5, 8 })]
+        [TestCase("path", "DESC", "ebook", new[] { 5, 4, 3, 2, 1, 8 })]
+        [TestCase("bookFileCount", "DESC", "ebook", new[] { 8, 4, 3, 5, 2, 1 })]
+        [TestCase("narrator", "ASC", "audiobook", new[] { 6, 7 })]
+        [TestCase("narrator", "DESC", "audiobook", new[] { 7, 6 })]
+        [TestCase("duration", "ASC", "audiobook", new[] { 7, 6 })]
+        public void paged_books_should_sort_by_table_columns(string sortKey, string sortDirection, string mediaType, int[] expectedIds)
+        {
+            WithRepository(sut =>
+            {
+                var page = sut.GetBooksPaged(
+                    offset: 0,
+                    pageSize: 100,
+                    sortKey: sortKey,
+                    sortDirection: sortDirection,
+                    includeUnmonitored: true,
+                    mediaType: mediaType,
+                    downloaded: null);
+
+                Assert.That(page.Records.Select(book => book.Id), Is.EqualTo(expectedIds));
+            });
+        }
+
+        [Test]
+        public void paged_author_sort_should_work_with_the_monitored_filter()
+        {
+            WithRepository(sut =>
+            {
+                var page = sut.GetBooksPaged(
+                    offset: 0,
+                    pageSize: 100,
+                    sortKey: "authorTitle",
+                    sortDirection: "ASC",
+                    includeUnmonitored: false,
+                    mediaType: "ebook",
+                    downloaded: null,
+                    monitored: true);
+
+                Assert.That(page.Records.Select(book => book.Id), Is.EqualTo(new[] { 8, 4, 3, 5, 1 }));
+                Assert.That(page.TotalCount, Is.EqualTo(5));
+            });
+        }
+
         private static void WithRepository(Action<BookRepository> action)
         {
             WithRepository(DatabaseType.SQLite, action);
@@ -529,7 +574,11 @@ namespace Chaptarr.Core.Test.Books
                     ""EbookMonitored"" {booleanType} NULL,
                     ""EbookMonitorNewItems"" INTEGER NULL,
                     ""AudiobookQualityProfileId"" INTEGER NULL,
-                    ""EbookQualityProfileId"" INTEGER NULL
+                    ""EbookQualityProfileId"" INTEGER NULL,
+                    ""Name"" TEXT NULL,
+                    ""SortName"" TEXT NULL,
+                    ""AudiobookPath"" TEXT NULL,
+                    ""EbookPath"" TEXT NULL
                 );
             ");
 
@@ -542,7 +591,8 @@ namespace Chaptarr.Core.Test.Books
                     ""MediaType"" INTEGER NOT NULL,
                     ""AudiobookMonitored"" {booleanType} NOT NULL,
                     ""EbookMonitored"" {booleanType} NOT NULL,
-                    ""ReleaseDate"" {dateTimeType} NULL
+                    ""ReleaseDate"" {dateTimeType} NULL,
+                    ""DurationMinutes"" INTEGER NULL
                 );
             ");
 
@@ -551,7 +601,8 @@ namespace Chaptarr.Core.Test.Books
                     ""Title"" TEXT NULL,
                     ""Id"" INTEGER PRIMARY KEY,
                     ""BookId"" INTEGER NOT NULL,
-                    ""Monitored"" {booleanType} NOT NULL
+                    ""Monitored"" {booleanType} NOT NULL,
+                    ""Narrator"" TEXT NULL
                 );
             ");
 
@@ -624,6 +675,17 @@ namespace Chaptarr.Core.Test.Books
                     (400, 40, 'audiobook', 456, '{""quality"": 2, ""revision"": {}}'),
                     (800, 80, 'ebook', 789, '{""quality"": 3, ""revision"": {}}'),
                     (801, 81, 'ebook', 790, '{""quality"": 3, ""revision"": {}}');
+            ");
+
+            // Author 30 has no eBook folder, so it sorts last by path in both directions.
+            connection.Execute(@"
+                UPDATE ""Authors"" SET ""Name"" = 'Brandon Sanderson', ""SortName"" = 'sanderson, brandon', ""AudiobookPath"" = '/audio/sanderson', ""EbookPath"" = '/ebooks/sanderson' WHERE ""Id"" = 10;
+                UPDATE ""Authors"" SET ""Name"" = 'Andy Weir', ""SortName"" = 'weir, andy', ""AudiobookPath"" = '/audio/weir' WHERE ""Id"" = 20;
+                UPDATE ""Authors"" SET ""Name"" = 'Ann Leckie', ""SortName"" = 'leckie, ann' WHERE ""Id"" = 30;
+                UPDATE ""Editions"" SET ""Narrator"" = 'Michael Kramer' WHERE ""Id"" = 60;
+                UPDATE ""Editions"" SET ""Narrator"" = 'Ray Porter' WHERE ""Id"" = 70;
+                UPDATE ""Books"" SET ""DurationMinutes"" = 600 WHERE ""Id"" = 6;
+                UPDATE ""Books"" SET ""DurationMinutes"" = 300 WHERE ""Id"" = 7;
             ");
         }
 
