@@ -517,7 +517,7 @@ namespace NzbDrone.Core.MediaFiles.BookImport.Manual
 
             item.Quality = decision.Item.Quality;
             item.IndexerFlags = (int)decision.Item.IndexerFlags;
-            item.Size = fileInfo.Length;
+            item.Size = fileInfo.Exists ? fileInfo.Length : 0;
 
             var rejections = decision.Rejections?.ToList() ?? new List<Rejection>();
 
