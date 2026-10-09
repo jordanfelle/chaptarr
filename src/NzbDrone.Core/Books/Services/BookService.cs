@@ -2517,7 +2517,7 @@ namespace NzbDrone.Core.Books
 
                 // CRITICAL: Check if root folder exists for this media type
                 // If no root folder, return empty list (GUI shows nothing)
-                if (!HasRootFolderForMediaType(targetMediaType.Value))
+                if (!HasRootFolderForMediaType(targetMediaType))
                 {
                     _logger.Debug("[DISPLAY-DEBUG] No root folder configured for {0}, returning empty list", mediaType);
                     return new List<Book>();
