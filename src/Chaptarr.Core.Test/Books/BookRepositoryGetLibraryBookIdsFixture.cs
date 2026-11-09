@@ -221,10 +221,10 @@ namespace Chaptarr.Core.Test.Books
                 Assert.That(allStatistics, Has.Count.EqualTo(bookCount));
                 Assert.That(authorStatistics.Select(stat => stat.BookId), Is.EquivalentTo(allStatistics.Where(stat => stat.AuthorId == 1).Select(stat => stat.BookId)));
                 Assert.That(authorAudiobookStatistics.Select(stat => stat.BookId), Is.EquivalentTo(audiobookStatistics.Where(stat => stat.AuthorId == 1).Select(stat => stat.BookId)));
-                Assert.That(emittedCommands, Has.Count.EqualTo(11), "The batched library/statistics operations must retain their existing reader-query count.");
+                Assert.That(emittedCommands, Has.Count.EqualTo(12), "The batched library/statistics operations must retain their reader-query count (the paged book index now sorts and pages IDs first, then loads that page: one extra query).");
 
                 Assert.That(repository.GetLibraryBookIds(Array.Empty<int>()), Is.Empty);
-                Assert.That(emittedCommands, Has.Count.EqualTo(11), "An empty eligibility batch must not query the database.");
+                Assert.That(emittedCommands, Has.Count.EqualTo(12), "An empty eligibility batch must not query the database.");
                 var scope = new[] { 12345, 2, 12345, bookCount + 1 };
                 elapsed.Restart();
                 Assert.That(repository.GetLibraryBookIds(scope), Is.EquivalentTo(libraryIds.Intersect(scope)));
@@ -232,7 +232,7 @@ namespace Chaptarr.Core.Test.Books
                 elapsed.Restart();
                 Assert.That(repository.GetLibraryBookIds(new[] { 12345 }), Is.EquivalentTo(libraryIds.Where(id => id == 12345)));
                 TestContext.Progress.WriteLine($"Singleton Library IDs: files={fileCount}, elapsed={elapsed.Elapsed.TotalMilliseconds:0.##}ms.");
-                Assert.That(emittedCommands, Has.Count.EqualTo(13), "Each scoped eligibility operation must remain one reader query.");
+                Assert.That(emittedCommands, Has.Count.EqualTo(14), "Each scoped eligibility operation must remain one reader query.");
 
                 var currentCosts = emittedCommands.Select(command => ExplainTotalCost(connectionString, command)).ToArray();
                 var correlatedCost = ExplainTotalCost(connectionString, new CapturedCommand
@@ -247,12 +247,12 @@ namespace Chaptarr.Core.Test.Books
                     Parameters = Array.Empty<NpgsqlParameter>()
                 });
 
-                var queryNames = new[] { "GetLibraryBookIds", "GetBookBuckets", "bucket footer", "paged count", "paged page", "GetBookIds select-all", "author audiobook stats", "author ebook stats", "all author stats", "single author stats", "single author audiobook stats", "scoped eligibility", "singleton eligibility" };
+                var queryNames = new[] { "GetLibraryBookIds", "GetBookBuckets", "bucket footer", "paged count", "paged page ids", "paged page", "GetBookIds select-all", "author audiobook stats", "author ebook stats", "all author stats", "single author stats", "single author audiobook stats", "scoped eligibility", "singleton eligibility" };
                 var costSummary = string.Join(", ", currentCosts.Select((cost, index) => $"{queryNames[index]}={cost:0.##}"));
                 TestContext.Progress.WriteLine($"Repository plan costs: {costSummary}; correlated EXISTS={correlatedCost:0.##}; gate=1000000.");
 
                 Assert.That(currentCosts, Has.All.LessThan(1000000), $"Each captured repository query must stay under the fixed synthetic-fixture plan-cost gate. Costs: {costSummary}; correlated EXISTS={correlatedCost:0.##}.");
-                Assert.That(currentCosts.Skip(11), Has.All.LessThan(1000), $"Scoped eligibility must read only candidate-owned evidence on this synthetic catalog. Costs: {costSummary}.");
+                Assert.That(currentCosts.Skip(12), Has.All.LessThan(1000), $"Scoped eligibility must read only candidate-owned evidence on this synthetic catalog. Costs: {costSummary}.");
             }
             finally
             {
