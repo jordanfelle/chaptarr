@@ -92,6 +92,7 @@ namespace Chaptarr.Core.Test.Api
             public List<AuthorStatistics> AuthorStatistics(IEnumerable<int> authorIds) => authorIds.Select(AuthorStatistics).ToList();
             public List<AuthorStatistics> AuthorStatistics(string mediaType) => throw new NotImplementedException();
             public AuthorStatistics AuthorStatistics(int authorId, string mediaType) => throw new NotImplementedException();
+            public List<AuthorStatistics> AuthorStatistics(IEnumerable<int> authorIds, string mediaType) => throw new NotImplementedException();
             public void InvalidateAuthorCache(int authorId) => throw new NotImplementedException();
         }
 

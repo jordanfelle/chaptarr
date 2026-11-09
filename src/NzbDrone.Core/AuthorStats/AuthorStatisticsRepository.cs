@@ -14,6 +14,7 @@ namespace NzbDrone.Core.AuthorStats
         List<BookStatistics> AuthorStatistics(IEnumerable<int> authorIds);
         List<BookStatistics> AuthorStatistics(string mediaType);
         List<BookStatistics> AuthorStatistics(int authorId, string mediaType);
+        List<BookStatistics> AuthorStatistics(IEnumerable<int> authorIds, string mediaType);
     }
 
     public class AuthorStatisticsRepository : IAuthorStatisticsRepository
@@ -57,7 +58,7 @@ namespace NzbDrone.Core.AuthorStats
             return AuthorStatistics(new[] { authorId }, mediaType);
         }
 
-        private List<BookStatistics> AuthorStatistics(IEnumerable<int> authorIds, string mediaType)
+        public List<BookStatistics> AuthorStatistics(IEnumerable<int> authorIds, string mediaType)
         {
             var ids = authorIds?.Distinct().ToArray() ?? Array.Empty<int>();
             if (ids.Length == 0)
