@@ -221,7 +221,7 @@ namespace Chaptarr.Core.Test.Books
                 Assert.That(allStatistics, Has.Count.EqualTo(bookCount));
                 Assert.That(authorStatistics.Select(stat => stat.BookId), Is.EquivalentTo(allStatistics.Where(stat => stat.AuthorId == 1).Select(stat => stat.BookId)));
                 Assert.That(authorAudiobookStatistics.Select(stat => stat.BookId), Is.EquivalentTo(audiobookStatistics.Where(stat => stat.AuthorId == 1).Select(stat => stat.BookId)));
-                Assert.That(emittedCommands, Has.Count.EqualTo(11), "The batched library/statistics operations must retain their existing reader-query count.");
+                Assert.That(emittedCommands, Has.Count.EqualTo(12), "The batched library/statistics operations must retain their reader-query count (the paged book index now sorts and pages IDs first, then loads that page: one extra query).");
 
                 Assert.That(repository.GetLibraryBookIds(Array.Empty<int>()), Is.Empty);
                 Assert.That(emittedCommands, Has.Count.EqualTo(11), "An empty eligibility batch must not query the database.");
