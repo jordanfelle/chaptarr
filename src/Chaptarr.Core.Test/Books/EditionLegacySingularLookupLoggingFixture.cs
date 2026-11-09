@@ -75,7 +75,7 @@ namespace Chaptarr.Core.Test.Books
             public Edition Single() => throw new NotImplementedException();
             public Edition SingleOrDefault() => throw new NotImplementedException();
             public PagingSpec<Edition> GetPaged(PagingSpec<Edition> pagingSpec) => throw new NotImplementedException();
-            public List<Edition> GetAllMonitoredEditions() => throw new NotImplementedException();
+            public List<Edition> GetMonitoredEditionsForBookList(BookMediaType? mediaType) => throw new NotImplementedException();
             public Edition FindByForeignEditionId(string foreignEditionId) => throw new NotImplementedException();
             public List<Edition> FindAllByForeignEditionId(string foreignEditionId) => new();
             public List<Edition> FindAllByForeignEditionId(IEnumerable<string> ids) => new();
