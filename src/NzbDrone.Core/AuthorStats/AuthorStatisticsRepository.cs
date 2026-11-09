@@ -58,7 +58,7 @@ namespace NzbDrone.Core.AuthorStats
             return AuthorStatistics(new[] { authorId }, mediaType);
         }
 
-        private List<BookStatistics> AuthorStatistics(IEnumerable<int> authorIds, string mediaType)
+        public List<BookStatistics> AuthorStatistics(IEnumerable<int> authorIds, string mediaType)
         {
             var ids = authorIds?.Distinct().ToArray() ?? Array.Empty<int>();
             if (ids.Length == 0)
@@ -79,19 +79,6 @@ namespace NzbDrone.Core.AuthorStats
             }
 
             return statistics;
-        }
-
-        public List<BookStatistics> AuthorStatistics(IEnumerable<int> authorIds, string mediaType)
-        {
-            var idsArray = authorIds?.Distinct().ToArray() ?? Array.Empty<int>();
-            if (idsArray.Length == 0)
-            {
-                return new List<BookStatistics>();
-            }
-
-            var builder = Builder(_database.DatabaseType).Where<Author>(author => Enumerable.Contains(idsArray, author.Id));
-            ApplyMediaTypeFilter(builder, mediaType);
-            return Query(builder);
         }
 
         internal static string BuildBaseSql(DatabaseType databaseType)
