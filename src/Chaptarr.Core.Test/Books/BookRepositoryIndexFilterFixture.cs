@@ -468,6 +468,71 @@ namespace Chaptarr.Core.Test.Books
             });
         }
 
+        [TestCase("authorName", "ASC", "ebook", new[] { 8, 1, 2, 3, 4, 5 })]
+        [TestCase("qualityProfileId", "DESC", "ebook", new[] { 8, 5, 4, 3, 2, 1 })]
+        [TestCase("path", "ASC", "ebook", new[] { 1, 2, 3, 4, 5, 8 })]
+        [TestCase("path", "DESC", "ebook", new[] { 5, 4, 3, 2, 1, 8 })]
+        [TestCase("bookFileCount", "DESC", "ebook", new[] { 8, 4, 3, 5, 2, 1 })]
+        [TestCase("narrator", "ASC", "audiobook", new[] { 6, 7 })]
+        [TestCase("narrator", "DESC", "audiobook", new[] { 7, 6 })]
+        [TestCase("duration", "ASC", "audiobook", new[] { 7, 6 })]
+        public void paged_books_should_sort_by_table_columns(string sortKey, string sortDirection, string mediaType, int[] expectedIds)
+        {
+            WithRepository(sut =>
+            {
+                var page = sut.GetBooksPaged(
+                    offset: 0,
+                    pageSize: 100,
+                    sortKey: sortKey,
+                    sortDirection: sortDirection,
+                    includeUnmonitored: true,
+                    mediaType: mediaType,
+                    downloaded: null);
+
+                Assert.That(page.Records.Select(book => book.Id), Is.EqualTo(expectedIds));
+            });
+        }
+
+        [Test]
+        public void paged_books_should_keep_sort_order_across_pages()
+        {
+            WithRepository(sut =>
+            {
+                var pages = new[] { 0, 3, 6 }
+                    .Select(offset => sut.GetBooksPaged(
+                        offset: offset,
+                        pageSize: 3,
+                        sortKey: "sizeOnDisk",
+                        sortDirection: "DESC",
+                        includeUnmonitored: true))
+                    .ToList();
+
+                Assert.That(pages.Select(page => page.TotalCount), Is.All.EqualTo(8));
+                Assert.That(pages.SelectMany(page => page.Records).Select(book => book.Id),
+                    Is.EqualTo(new[] { 8, 4, 3, 7, 6, 5, 2, 1 }));
+            });
+        }
+
+        [Test]
+        public void paged_author_sort_should_work_with_the_monitored_filter()
+        {
+            WithRepository(sut =>
+            {
+                var page = sut.GetBooksPaged(
+                    offset: 0,
+                    pageSize: 100,
+                    sortKey: "authorTitle",
+                    sortDirection: "ASC",
+                    includeUnmonitored: false,
+                    mediaType: "ebook",
+                    downloaded: null,
+                    monitored: true);
+
+                Assert.That(page.Records.Select(book => book.Id), Is.EqualTo(new[] { 8, 4, 3, 5, 1 }));
+                Assert.That(page.TotalCount, Is.EqualTo(5));
+            });
+        }
+
         private static void WithRepository(Action<BookRepository> action)
         {
             WithRepository(DatabaseType.SQLite, action);
