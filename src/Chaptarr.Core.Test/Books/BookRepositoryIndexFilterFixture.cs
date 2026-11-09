@@ -651,7 +651,11 @@ namespace Chaptarr.Core.Test.Books
                     ""EbookMonitored"" {booleanType} NULL,
                     ""EbookMonitorNewItems"" INTEGER NULL,
                     ""AudiobookQualityProfileId"" INTEGER NULL,
-                    ""EbookQualityProfileId"" INTEGER NULL
+                    ""EbookQualityProfileId"" INTEGER NULL,
+                    ""Name"" TEXT NULL,
+                    ""SortName"" TEXT NULL,
+                    ""AudiobookPath"" TEXT NULL,
+                    ""EbookPath"" TEXT NULL
                 );
             ");
 
@@ -664,7 +668,8 @@ namespace Chaptarr.Core.Test.Books
                     ""MediaType"" INTEGER NOT NULL,
                     ""AudiobookMonitored"" {booleanType} NOT NULL,
                     ""EbookMonitored"" {booleanType} NOT NULL,
-                    ""ReleaseDate"" {dateTimeType} NULL
+                    ""ReleaseDate"" {dateTimeType} NULL,
+                    ""DurationMinutes"" INTEGER NULL
                 );
             ");
 
@@ -673,7 +678,8 @@ namespace Chaptarr.Core.Test.Books
                     ""Title"" TEXT NULL,
                     ""Id"" INTEGER PRIMARY KEY,
                     ""BookId"" INTEGER NOT NULL,
-                    ""Monitored"" {booleanType} NOT NULL
+                    ""Monitored"" {booleanType} NOT NULL,
+                    ""Narrator"" TEXT NULL
                 );
             ");
 
@@ -746,6 +752,17 @@ namespace Chaptarr.Core.Test.Books
                     (400, 40, 'audiobook', 456, '{""quality"": 2, ""revision"": {}}'),
                     (800, 80, 'ebook', 789, '{""quality"": 3, ""revision"": {}}'),
                     (801, 81, 'ebook', 790, '{""quality"": 3, ""revision"": {}}');
+            ");
+
+            // Author 30 has no eBook folder, so it sorts last by path in both directions.
+            connection.Execute(@"
+                UPDATE ""Authors"" SET ""Name"" = 'Brandon Sanderson', ""SortName"" = 'sanderson, brandon', ""AudiobookPath"" = '/audio/sanderson', ""EbookPath"" = '/ebooks/sanderson' WHERE ""Id"" = 10;
+                UPDATE ""Authors"" SET ""Name"" = 'Andy Weir', ""SortName"" = 'weir, andy', ""AudiobookPath"" = '/audio/weir' WHERE ""Id"" = 20;
+                UPDATE ""Authors"" SET ""Name"" = 'Ann Leckie', ""SortName"" = 'leckie, ann' WHERE ""Id"" = 30;
+                UPDATE ""Editions"" SET ""Narrator"" = 'Michael Kramer' WHERE ""Id"" = 60;
+                UPDATE ""Editions"" SET ""Narrator"" = 'Ray Porter' WHERE ""Id"" = 70;
+                UPDATE ""Books"" SET ""DurationMinutes"" = 600 WHERE ""Id"" = 6;
+                UPDATE ""Books"" SET ""DurationMinutes"" = 300 WHERE ""Id"" = 7;
             ");
         }
 
