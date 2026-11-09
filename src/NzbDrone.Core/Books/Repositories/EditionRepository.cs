@@ -17,7 +17,7 @@ namespace NzbDrone.Core.Books
         void RefreshProviderAliases(IList<Edition> editions);
         void UpdateMany(IList<Edition> editions, IDbConnection connection, IDbTransaction transaction, Edition selectedEdition = null);
         void UpdateSelection(IList<Edition> editions);
-        List<Edition> GetAllMonitoredEditions();
+        List<Edition> GetMonitoredEditionsForBookList(BookMediaType? mediaType);
         Edition FindByForeignEditionId(string foreignEditionId);
         List<Edition> FindAllByForeignEditionId(string foreignEditionId);
         List<Edition> FindAllByForeignEditionId(IEnumerable<string> ids);
@@ -49,12 +49,14 @@ namespace NzbDrone.Core.Books
     {
         private readonly Logger _logger;
         private readonly IProviderAliasRepository _aliases;
+        private readonly string _bookListColumns;
 
         public EditionRepository(IMainDatabase database, IEventAggregator eventAggregator)
             : base(database, eventAggregator)
         {
             _logger = LogManager.GetCurrentClassLogger();
             _aliases = new ProviderAliasRepository(database, eventAggregator);
+            _bookListColumns = BuildBookListColumns();
         }
 
         public override Edition Insert(Edition edition)
@@ -108,11 +110,38 @@ namespace NzbDrone.Core.Books
             SetFields(editions, edition => edition.ProviderIds);
         }
 
-        public List<Edition> GetAllMonitoredEditions()
+        public List<Edition> GetMonitoredEditionsForBookList(BookMediaType? mediaType)
         {
             // WhereBuilderSqlite requires a concrete value; avoid boolean-expression simplification.
             var monitored = true;
-            return Query(x => x.Monitored == monitored);
+            var builder = Builder()
+                .Select(_bookListColumns)
+                .Where<Edition>(e => e.Monitored == monitored);
+
+            if (mediaType.HasValue)
+            {
+                var bookMediaType = mediaType.Value;
+                builder = builder.Join<Edition, Book>((e, b) => e.BookId == b.Id)
+                    .Where<Book>(b => b.MediaType == bookMediaType);
+            }
+
+            var sql = builder.AddSelectTemplate(typeof(Edition));
+            return _database.Query<Edition>(sql.RawSql, sql.Parameters).ToList();
+        }
+
+        // Book lists never read Chapters, and on large libraries it is most of the Editions table.
+        private string BuildBookListColumns()
+        {
+            var excluded = TableMapping.Mapper.ExcludeProperties(typeof(Edition))
+                .Select(x => x.Name)
+                .ToHashSet();
+            excluded.Add(nameof(Edition.Chapters));
+
+            var columns = typeof(Edition).GetProperties()
+                .Where(x => x.IsMappableProperty() && !excluded.Contains(x.Name))
+                .Select(x => $"\"{_table}\".\"{x.Name}\"");
+
+            return string.Join(", ", columns);
         }
 
         public int CountMissingMatchingTitles()
